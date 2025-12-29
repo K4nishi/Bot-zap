@@ -11,7 +11,7 @@ const { formatarData, getDiaSemana, getGruposAutorizados } = require('../utils/h
  * @param {Object} client - Cliente do WhatsApp
  */
 function agendarTiragemFalta(client) {
-    const hora = process.env.TIRAGEM_HORA || '08';
+    const hora = process.env.TIRAGEM_HORA || '07';
     const minuto = process.env.TIRAGEM_MINUTO || '00';
 
     // Expressão cron: minuto hora * * 1-5 (segunda a sexta)
