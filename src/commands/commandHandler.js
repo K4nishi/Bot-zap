@@ -3,7 +3,7 @@
  */
 
 const { marcarTodos, isGrupoAutorizado, getPrefixo } = require('../utils/helpers');
-const { tiragemFaltaManual } = require('../schedulers/tiragemFalta');
+const { tiragemFaltaManual, resultadoManual } = require('../schedulers/tiragemFalta');
 
 /**
  * Processa os comandos recebidos
@@ -59,6 +59,10 @@ async function handleCommands(client, message) {
 
         case 'tiragem':
             await comandoTiragem(client, message, chat);
+            break;
+
+        case 'resultado':
+            await comandoResultado(client, message, chat);
             break;
 
         default:
@@ -145,6 +149,8 @@ async function comandoHelp(message) {
         '   Envia um aviso marcando todos do grupo\n\n' +
         `📊 *${prefixo}tiragem*\n` +
         '   Envia a tiragem de falta manualmente\n\n' +
+        `📋 *${prefixo}resultado*\n` +
+        '   Mostra o resultado da tiragem atual\n\n' +
         `🆔 *${prefixo}grupoid*\n` +
         '   Mostra o ID do grupo atual\n\n' +
         `❓ *${prefixo}help*\n` +
@@ -153,7 +159,8 @@ async function comandoHelp(message) {
         '   Testa se o bot está funcionando\n\n' +
         '━━━━━━━━━━━━━━━━━━━━━\n\n' +
         '⏰ *Tiragem de Falta Automática*\n' +
-        '   Todos os dias úteis às 07:00, a tiragem é enviada automaticamente.';
+        '   • 07:00 - Envia a enquete de falta\n' +
+        '   • 07:15 - Envia o resultado automático';
 
     await message.reply(helpMessage);
 }
@@ -181,6 +188,20 @@ async function comandoTiragem(client, message, chat) {
     } catch (error) {
         console.error('Erro ao enviar tiragem:', error);
         await message.reply('❌ Ocorreu um erro ao enviar a tiragem. Tente novamente.');
+    }
+}
+
+/**
+ * Comando !resultado - Mostra o resultado da tiragem atual
+ */
+async function comandoResultado(client, message, chat) {
+    try {
+        await message.reply('📋 Gerando resultado da tiragem...');
+        await resultadoManual(client, chat);
+        console.log(`✅ Resultado enviado no grupo: ${chat.name}`);
+    } catch (error) {
+        console.error('Erro ao enviar resultado:', error);
+        await message.reply('❌ Ocorreu um erro ao gerar o resultado. Tente novamente.');
     }
 }
 
