@@ -80,12 +80,24 @@ client.on('ready', () => {
     agendarTiragemFalta(client);
 });
 
-// Evento: Mensagem recebida
+// Evento: Mensagem recebida (de terceiros)
 client.on('message', async (message) => {
     try {
         await handleCommands(client, message);
     } catch (error) {
         console.error('Erro ao processar mensagem:', error);
+    }
+});
+
+// Evento: Mensagem criada (inclui as enviadas pelo próprio bot/conta)
+client.on('message_create', async (message) => {
+    // Processa apenas se começar com o prefixo para evitar loop de mensagens do próprio bot
+    if (message.body.startsWith(getPrefixo())) {
+        try {
+            await handleCommands(client, message);
+        } catch (error) {
+            console.error('Erro ao processar mensagem criada:', error);
+        }
     }
 });
 

@@ -22,21 +22,30 @@ async function handleCommands(client, message) {
     // Obtém o chat
     const chat = await message.getChat();
 
-    // Verifica se é um grupo
-    if (!chat.isGroup) {
-        await message.reply('❌ Este comando só funciona em grupos!');
-        return;
-    }
-
-    // Verifica se o grupo está autorizado
-    if (!isGrupoAutorizado(chat.id._serialized)) {
-        await message.reply('❌ Este grupo não está autorizado a usar o bot.');
-        return;
-    }
+    // Identifica se a mensagem é do dono (seu número)
+    const senderId = message.author || message.from;
+    const isDono = senderId.includes('5571991533200');
 
     // Extrai o comando e os argumentos
     const args = body.slice(prefixo.length).trim().split(/ +/);
     const command = args.shift().toLowerCase();
+
+    // Regras de Autorização:
+    // 1. !grupoid sempre funciona (para poder configurar o bot)
+    // 2. O seu número (Dono) sempre pode usar comandos
+    // 3. Outros usuários só podem usar em grupos autorizados
+    if (command !== 'grupoid' && !isDono) {
+        if (!chat.isGroup) {
+            await message.reply('❌ Este comando só funciona em grupos!');
+            return;
+        }
+
+        if (!isGrupoAutorizado(chat.id._serialized)) {
+            // Ignora silenciosamente para não floodar grupos aleatórios
+            console.log(`🚫 Bloqueado comando ${command} no grupo não autorizado: ${chat.name}`);
+            return;
+        }
+    }
 
     switch (command) {
         case 'aviso':
