@@ -24,7 +24,10 @@ async function handleCommands(client, message) {
 
     // Identifica se a mensagem é do dono (seu número)
     const senderId = message.author || message.from;
-    const isDono = senderId.includes('5571991533200');
+    console.log(`📩 Mensagem recebida de: ${senderId} | Comando: ${body}`);
+
+    const isDono = message.fromMe || senderId.includes('5571991533200') || senderId.includes('557191533200');
+
 
     // Extrai o comando e os argumentos
     const args = body.slice(prefixo.length).trim().split(/ +/);

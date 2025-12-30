@@ -14,7 +14,7 @@ const cron = require('node-cron');
 const path = require('path');
 require('dotenv').config();
 
-const { marcarTodos, formatarData, getGruposAutorizados } = require('./utils/helpers');
+const { marcarTodos, formatarData, getGruposAutorizados, getPrefixo } = require('./utils/helpers');
 const { handleCommands } = require('./commands/commandHandler');
 const { agendarTiragemFalta } = require('./schedulers/tiragemFalta');
 
