@@ -57,9 +57,17 @@ function getDiaSemana() {
 function getGruposAutorizados() {
     const grupos = process.env.GRUPOS_AUTORIZADOS;
     if (!grupos || grupos.trim() === '') {
-        return []; // Retorna vazio = todos os grupos são permitidos
+        return [];
     }
-    return grupos.split(',').map(g => g.trim());
+    return grupos.split(',').map(g => g.trim()).filter(g => g !== '');
+}
+
+/**
+ * Obtém o ID do grupo específico onde a tiragem automática deve ocorrer
+ * @returns {string|null} - ID do grupo ou null se não configurado
+ */
+function getGrupoTiragem() {
+    return process.env.ID_GRUPO_TIRAGEM || null;
 }
 
 /**
@@ -69,7 +77,7 @@ function getGruposAutorizados() {
  */
 function isGrupoAutorizado(chatId) {
     const gruposAutorizados = getGruposAutorizados();
-    // Se não há grupos configurados, permite todos
+    // Se não há grupos configurados, permite todos para os comandos manuais
     if (gruposAutorizados.length === 0) {
         return true;
     }
@@ -89,6 +97,7 @@ module.exports = {
     formatarData,
     getDiaSemana,
     getGruposAutorizados,
+    getGrupoTiragem,
     isGrupoAutorizado,
     getPrefixo
 };

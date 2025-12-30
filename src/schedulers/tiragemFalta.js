@@ -1,14 +1,14 @@
 /**
  * Agendador para Tiragem de Falta
- * Envia uma enquete diária marcando todos os participantes do grupo
- * Às 7:15 envia o resultado da votação
+ * Envia uma mensagem diária pedindo reações para marcar presença
+ * Às 07:15 envia o resultado da votação
  */
 
 const cron = require('node-cron');
-const { formatarData, getDiaSemana, getGruposAutorizados } = require('../utils/helpers');
+const { formatarData, getDiaSemana, getGruposAutorizados, getGrupoTiragem } = require('../utils/helpers');
 
-// Armazena o ID da última enquete enviada por grupo
-let ultimaEnquete = {};
+// Armazena o ID da última mensagem de tiragem enviada por grupo
+let ultimaMensagemTiragem = {};
 
 /**
  * Agenda o envio da tiragem de falta
@@ -22,12 +22,23 @@ function agendarTiragemFalta(client) {
     const cronExpression = `${minuto} ${hora} * * 1-5`;
 
     console.log(`\n⏰ Tiragem de falta agendada para: ${hora}:${minuto} (Segunda a Sexta)`);
-    console.log(`   Expressão cron: ${cronExpression}`);
 
     cron.schedule(cronExpression, async () => {
-        console.log(`\n📊 Executando tiragem de falta - ${formatarData()}\n`);
-        ultimaEnquete = {};
-        await enviarTiragemFalta(client);
+        console.log(`\n📊 Executando tiragem de falta automática - ${formatarData()}\n`);
+
+        const idGrupo = getGrupoTiragem();
+        if (!idGrupo) {
+            console.log('⚠️ ID_GRUPO_TIRAGEM não configurado no .env. Ignorando tiragem automática.');
+            return;
+        }
+
+        try {
+            const chat = await client.getChatById(idGrupo);
+            await enviarEnqueteGrupo(client, chat);
+            console.log(`✅ Tiragem automática enviada para grupo: ${chat.name}`);
+        } catch (error) {
+            console.error('❌ Erro na tiragem automática:', error.message);
+        }
     }, {
         scheduled: true,
         timezone: 'America/Sao_Paulo'
@@ -38,12 +49,21 @@ function agendarTiragemFalta(client) {
     const minutoResultado = '15';
     const cronResultado = `${minutoResultado} ${horaResultado} * * 1-5`;
 
-    console.log(`📊 Resultado da tiragem agendado para: ${horaResultado}:${minutoResultado}`);
-    console.log(`   Expressão cron: ${cronResultado}\n`);
+    console.log(`📊 Resultado da tiragem agendado para: ${horaResultado}:${minutoResultado}\n`);
 
     cron.schedule(cronResultado, async () => {
-        console.log(`\n📋 Enviando resultado da tiragem - ${formatarData()}\n`);
-        await enviarResultadoTiragem(client);
+        console.log(`\n📋 Enviando resultado da tiragem automático - ${formatarData()}\n`);
+
+        const idGrupo = getGrupoTiragem();
+        if (!idGrupo) return;
+
+        try {
+            const chat = await client.getChatById(idGrupo);
+            await enviarResultadoGrupo(client, chat);
+            console.log(`✅ Resultado automático enviado para grupo: ${chat.name}`);
+        } catch (error) {
+            console.error('❌ Erro no resultado automático:', error.message);
+        }
     }, {
         scheduled: true,
         timezone: 'America/Sao_Paulo'
@@ -51,36 +71,7 @@ function agendarTiragemFalta(client) {
 }
 
 /**
- * Envia o resultado da tiragem de falta
- * @param {Object} client - Cliente do WhatsApp
- */
-async function enviarResultadoTiragem(client) {
-    try {
-        const chats = await client.getChats();
-        const gruposAutorizados = getGruposAutorizados();
-
-        for (const chat of chats) {
-            if (!chat.isGroup) continue;
-
-            if (gruposAutorizados.length > 0 && !gruposAutorizados.includes(chat.id._serialized)) {
-                continue;
-            }
-
-            try {
-                await enviarResultadoGrupo(client, chat);
-                console.log(`✅ Resultado enviado para: ${chat.name}`);
-            } catch (error) {
-                console.error(`❌ Erro ao enviar resultado para ${chat.name}:`, error.message);
-            }
-        }
-    } catch (error) {
-        console.error('Erro ao enviar resultados:', error);
-    }
-}
-
-/**
  * Envia o resultado da tiragem para um grupo específico
- * Busca os votos diretamente da última enquete enviada
  * @param {Object} client - Cliente do WhatsApp
  * @param {Object} chat - Chat do grupo
  */
@@ -88,57 +79,57 @@ async function enviarResultadoGrupo(client, chat) {
     const chatId = chat.id._serialized;
     const dataAtual = formatarData();
 
-    // Busca a última enquete do chat
-    const pollId = ultimaEnquete[chatId];
+    // Busca a última mensagem de tiragem do chat
+    const msgId = ultimaMensagemTiragem[chatId];
 
-    let presentes = [];
-    let ausentes = [];
-    let atestados = [];
+    let presentes = new Set();
+    let ausentes = new Set();
+    let atestados = new Set();
 
-    if (pollId) {
+    if (msgId) {
         try {
-            // Tenta buscar a mensagem da enquete
+            // Busca a mensagem específica para pegar as reações atualizadas
             const messages = await chat.fetchMessages({ limit: 50 });
+            const msgTiragem = messages.find(m => m.id._serialized === msgId);
 
-            for (const msg of messages) {
-                if (msg.type === 'poll_creation' && msg.fromMe) {
-                    // Encontrou a enquete, tenta pegar os votos
-                    try {
-                        const pollVotes = await msg.getPollVotes();
+            if (msgTiragem && msgTiragem.reactions) {
+                // Em whatsapp-web.js as reações costumam vir em um array
+                // Cada item tem aggregateEmoji e senders
+                for (const reaction of msgTiragem.reactions) {
+                    const emoji = reaction.aggregateEmoji;
+                    const senders = reaction.senders || [];
 
-                        if (pollVotes && pollVotes.length > 0) {
-                            for (const voteData of pollVotes) {
-                                const voterId = voteData.sender;
-                                const selectedOption = voteData.selectedOptions?.[0]?.name || '';
+                    for (const sender of senders) {
+                        const senderId = sender.id?._serialized || sender._serialized;
 
-                                if (selectedOption.includes('Presente')) {
-                                    presentes.push(voterId);
-                                } else if (selectedOption.includes('Ausente')) {
-                                    ausentes.push(voterId);
-                                } else if (selectedOption.includes('Atestado') || selectedOption.includes('Justificativa')) {
-                                    atestados.push(voterId);
-                                }
-                            }
+                        if (emoji === '✅') {
+                            presentes.add(senderId);
+                        } else if (emoji === '❌') {
+                            ausentes.add(senderId);
+                        } else if (emoji === '🏥') {
+                            atestados.add(senderId);
                         }
-                    } catch (e) {
-                        console.log('Não foi possível obter votos da enquete:', e.message);
                     }
-                    break;
                 }
             }
         } catch (error) {
-            console.error('Erro ao buscar enquete:', error.message);
+            console.error('Erro ao buscar reações:', error.message);
         }
     }
 
+    const listaPresentes = Array.from(presentes);
+    const listaAusentes = Array.from(ausentes);
+    const listaAtestados = Array.from(atestados);
+
     // Conta os participantes do grupo
     const totalParticipantes = chat.participants.length;
-    const totalVotaram = presentes.length + ausentes.length + atestados.length;
+    const todosVotantes = new Set([...listaPresentes, ...listaAusentes, ...listaAtestados]);
+    const totalVotaram = todosVotantes.size;
     const naoVotaram = totalParticipantes - totalVotaram;
 
     // Formata os números de telefone
     const formatarNumeros = (lista) => {
-        if (lista.length === 0) return 'Nenhum';
+        if (lista.length === 0) return '_Nenhum_';
         return lista.map(id => {
             const numero = id.split('@')[0];
             return `📱 ${numero}`;
@@ -150,47 +141,19 @@ async function enviarResultadoGrupo(client, chat) {
         `📊 *RESULTADO DA TIRAGEM DE FALTA* 📊\n\n` +
         `📅 ${dataAtual}\n\n` +
         `━━━━━━━━━━━━━━━━━━━━━\n\n` +
-        `✅ *PRESENTES (${presentes.length}):*\n${formatarNumeros(presentes)}\n\n` +
-        `❌ *AUSENTES (${ausentes.length}):*\n${formatarNumeros(ausentes)}\n\n` +
-        `🏥 *ATESTADO/JUSTIFICATIVA (${atestados.length}):*\n${formatarNumeros(atestados)}\n\n` +
+        `✅ *PRESENTES (${listaPresentes.length}):*\n${formatarNumeros(listaPresentes)}\n\n` +
+        `❌ *AUSENTES (${listaAusentes.length}):*\n${formatarNumeros(listaAusentes)}\n\n` +
+        `🏥 *ATESTADO (${listaAtestados.length}):*\n${formatarNumeros(listaAtestados)}\n\n` +
         `⚠️ *NÃO VOTARAM (${naoVotaram}):*\n` +
-        (naoVotaram > 0 ? `${naoVotaram} pessoa(s) não responderam` : 'Todos votaram! 🎉') +
+        (naoVotaram > 0 ? `${naoVotaram} pessoa(s) não reagiram` : 'Todos reagiram! 🎉') +
         `\n\n━━━━━━━━━━━━━━━━━━━━━\n` +
-        `📈 *RESUMO:* ${totalVotaram}/${totalParticipantes} votaram`;
+        `📈 *RESUMO:* ${totalVotaram}/${totalParticipantes} participaram`;
 
     await chat.sendMessage(mensagem);
 }
 
 /**
- * Envia a enquete de tiragem de falta para todos os grupos autorizados
- * @param {Object} client - Cliente do WhatsApp
- */
-async function enviarTiragemFalta(client) {
-    try {
-        const chats = await client.getChats();
-        const gruposAutorizados = getGruposAutorizados();
-
-        for (const chat of chats) {
-            if (!chat.isGroup) continue;
-
-            if (gruposAutorizados.length > 0 && !gruposAutorizados.includes(chat.id._serialized)) {
-                continue;
-            }
-
-            try {
-                await enviarEnqueteGrupo(client, chat);
-                console.log(`✅ Tiragem enviada para: ${chat.name}`);
-            } catch (error) {
-                console.error(`❌ Erro ao enviar para ${chat.name}:`, error.message);
-            }
-        }
-    } catch (error) {
-        console.error('Erro ao executar tiragem de falta:', error);
-    }
-}
-
-/**
- * Envia a enquete de tiragem para um grupo específico
+ * Envia a mensagem de tiragem para um grupo específico usando emojis/reações
  * @param {Object} client - Cliente do WhatsApp
  * @param {Object} chat - Chat do grupo
  */
@@ -207,49 +170,23 @@ async function enviarEnqueteGrupo(client, chat) {
         mentionText += `@${participant.id.user} `;
     }
 
-    // Mensagem de aviso antes da enquete
-    const mensagemAviso =
+    // Mensagem de aviso e instruções
+    const mensagemTiragem =
         '📋 *TIRAGEM DE FALTA* 📋\n\n' +
         `📅 *${diaSemana}* - ${dataAtual}\n\n` +
-        '👇 Responda a enquete abaixo:\n' +
-        '⏰ Você tem até 07:15 para votar!\n\n' +
+        'Reaja a esta mensagem para marcar sua presença:\n' +
+        '✅ = *Presente*\n' +
+        '❌ = *Ausente*\n' +
+        '🏥 = *Atestado/Justificativa*\n\n' +
+        '⏰ Você tem até 07:15 para reagir!\n\n' +
         '━━━━━━━━━━━━━━━━━━━━━\n' +
         '👥 *Atenção todos:*\n' +
         mentionText;
 
-    await chat.sendMessage(mensagemAviso, { mentions });
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    const sentMsg = await chat.sendMessage(mensagemTiragem, { mentions });
 
-    // Cria e envia a enquete
-    try {
-        const { Poll } = require('whatsapp-web.js');
-        const poll = new Poll(
-            `📊 Tiragem de Falta - ${dataAtual}`,
-            [
-                '✅ Presente',
-                '❌ Ausente',
-                '🏥 Atestado/Justificativa'
-            ],
-            {
-                allowMultipleAnswers: false
-            }
-        );
-
-        const sentPoll = await chat.sendMessage(poll);
-        ultimaEnquete[chat.id._serialized] = sentPoll.id._serialized;
-        console.log(`📊 Enquete salva: ${sentPoll.id._serialized}`);
-    } catch (pollError) {
-        console.log('⚠️ Enquete não suportada, enviando mensagem alternativa...');
-
-        const mensagemAlternativa =
-            `📊 *Tiragem de Falta - ${dataAtual}*\n\n` +
-            'Reaja a esta mensagem:\n\n' +
-            '✅ = Presente\n' +
-            '❌ = Ausente\n' +
-            '🏥 = Atestado/Justificativa';
-
-        await chat.sendMessage(mensagemAlternativa);
-    }
+    // Armazena o ID para buscar o resultado depois
+    ultimaMensagemTiragem[chat.id._serialized] = sentMsg.id._serialized;
 }
 
 /**
@@ -268,7 +205,6 @@ async function resultadoManual(client, chat) {
 
 module.exports = {
     agendarTiragemFalta,
-    enviarTiragemFalta,
     tiragemFaltaManual,
     resultadoManual
 };
