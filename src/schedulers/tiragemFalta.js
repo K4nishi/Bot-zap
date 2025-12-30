@@ -72,7 +72,7 @@ function agendarTiragemFalta(client) {
 
 /**
  * Envia o resultado da tiragem para um grupo
- * Lógica: Presentes = quem reagiu com ✅. Ausentes = Todos os outros participantes.
+ * Lógica: Presentes = quem enviou uma mensagem de texto com "1" ou "presente" após a chamada.
  * @param {Object} client - Cliente do WhatsApp
  * @param {Object} chat - Chat do grupo
  */
@@ -82,47 +82,41 @@ async function enviarResultadoGrupo(client, chat) {
     const botId = client.info.wid._serialized;
 
     let presentesIds = new Set();
-    let msgIdMemory = ultimaMensagemTiragem[chatId];
-    let msgTiragem = null;
 
     try {
-        const messages = await chat.fetchMessages({ limit: 50 });
+        // Busca um volume maior de mensagens para garantir que pegamos todas as respostas
+        const messages = await chat.fetchMessages({ limit: 100 });
 
-        if (msgIdMemory) {
-            msgTiragem = messages.find(m => m.id._serialized === msgIdMemory);
-        }
+        // 1. Encontra o marcador da chamada de hoje
+        const msgTiragem = messages.find(m =>
+            m.fromMe &&
+            m.body &&
+            m.body.includes('📋 *TIRAGEM DE FALTA* 📋') &&
+            m.body.includes(dataAtual)
+        );
 
-        if (!msgTiragem) {
-            console.log('🔍 Buscando mensagem de tiragem por conteúdo...');
-            msgTiragem = messages.find(m =>
-                m.fromMe &&
-                m.body &&
-                m.body.includes('📋 *TIRAGEM DE FALTA* 📋') &&
-                m.body.includes(dataAtual)
-            );
-            if (msgTiragem) {
-                ultimaMensagemTiragem[chatId] = msgTiragem.id._serialized;
-                console.log('✅ Mensagem de tiragem encontrada no histórico.');
-            }
-        }
+        if (msgTiragem) {
+            const timestampTiragem = msgTiragem.timestamp;
+            console.log(`📊 Chamada encontrada (Timestamp: ${timestampTiragem}). Analisando respostas...`);
 
-        if (msgTiragem && msgTiragem.reactions && msgTiragem.reactions.length > 0) {
-            console.log(`📊 Processando reações da mensagem: ${msgTiragem.id._serialized}`);
-            for (const reaction of msgTiragem.reactions) {
-                const emoji = reaction.aggregateEmoji.replace(/\uFE0F/g, '');
-                if (emoji === '✅' || emoji === '✔️') {
-                    const senders = reaction.senders || [];
-                    for (const sender of senders) {
-                        const sId = sender.id?._serialized || sender._serialized || sender;
-                        presentesIds.add(sId);
-                    }
-                }
+            // 2. Filtra mensagens enviadas APÓS a tiragem que indicam presença
+            const respostas = messages.filter(m => {
+                if (m.timestamp < timestampTiragem || m.fromMe) return false;
+
+                const texto = m.body.trim().toLowerCase();
+                // Aceita "1", "1/1", "presente", "presente!", ou se a mensagem for uma resposta (quoted) à tiragem
+                return texto === '1' || texto === 'presente' || (m.hasQuotedMsg && m._data.quotedMsg.body.includes('TIRAGEM DE FALTA'));
+            });
+
+            for (const res of respostas) {
+                const sId = res.author || res.from;
+                presentesIds.add(sId);
             }
         } else {
-            console.log('⚠️ Nenhuma reação encontrada na mensagem de tiragem.');
+            console.log('❌ Não foi possível encontrar a mensagem de tiragem para hoje no histórico.');
         }
     } catch (error) {
-        console.error('Erro ao buscar reações para resultado:', error.message);
+        console.error('Erro ao buscar mensagens para resultado:', error.message);
     }
 
     // Calcula listas baseadas nos participantes do grupo
@@ -186,9 +180,9 @@ async function enviarEnqueteGrupo(client, chat) {
     const mensagemTiragem =
         '📋 *TIRAGEM DE FALTA* 📋\n\n' +
         `📅 *${diaSemana}* - ${dataAtual}\n\n` +
-        'Reaja a esta mensagem para marcar sua presença:\n' +
-        '✅ = *Presente*\n\n' +
-        '⚠️ *Atenção:* Quem não reagir será marcado como *Ausente* ❌\n\n' +
+        'Para marcar sua presença, responda a esta mensagem enviando:\n' +
+        '👉 Digite apenas *1* ou *Presente*\n\n' +
+        '⚠️ *Atenção:* Quem não enviar a mensagem será marcado como *Ausente* ❌\n\n' +
         '━━━━━━━━━━━━━━━━━━━━━\n' +
         '👥 *Chamada:* \n' +
         mentionText;
