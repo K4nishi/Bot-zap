@@ -63,11 +63,15 @@ function getGruposAutorizados() {
 }
 
 /**
- * Obtém o ID do grupo específico onde a tiragem automática deve ocorrer
- * @returns {string|null} - ID do grupo ou null se não configurado
+ * Obtém os IDs dos grupos onde a tiragem automática deve ocorrer
+ * @returns {Array<string>} - Array com IDs dos grupos ou array vazio
  */
 function getGrupoTiragem() {
-    return process.env.ID_GRUPO_TIRAGEM || null;
+    const grupos = process.env.ID_GRUPO_TIRAGEM;
+    if (!grupos || grupos.trim() === '') {
+        return [];
+    }
+    return grupos.split(',').map(g => g.trim()).filter(g => g !== '');
 }
 
 /**
@@ -77,9 +81,9 @@ function getGrupoTiragem() {
  */
 function isGrupoAutorizado(chatId) {
     const gruposAutorizados = getGruposAutorizados();
-    // Se não há grupos configurados, permite todos para os comandos manuais
+    // Se não há grupos configurados, não permite nenhum por segurança
     if (gruposAutorizados.length === 0) {
-        return true;
+        return false;
     }
     return gruposAutorizados.includes(chatId);
 }
@@ -92,6 +96,24 @@ function getPrefixo() {
     return process.env.PREFIXO_COMANDO || '!';
 }
 
+/**
+ * Obtém a lista de números que devem ser ignorados na contagem (ex: dono do bot)
+ * @returns {Array<string>} - Array com IDs serializados (ex: 5571991533200@c.us)
+ */
+function getNumerosIgnorados() {
+    const numeros = process.env.NUMEROS_IGNORADOS;
+    if (!numeros || numeros.trim() === '') {
+        return [];
+    }
+    return numeros.split(',').map(n => {
+        let num = n.trim();
+        if (!num.endsWith('@c.us')) {
+            num += '@c.us';
+        }
+        return num;
+    });
+}
+
 module.exports = {
     marcarTodos,
     formatarData,
@@ -99,5 +121,6 @@ module.exports = {
     getGruposAutorizados,
     getGrupoTiragem,
     isGrupoAutorizado,
-    getPrefixo
+    getPrefixo,
+    getNumerosIgnorados
 };

@@ -5,7 +5,7 @@
  */
 
 const cron = require('node-cron');
-const { formatarData, getDiaSemana, getGrupoTiragem } = require('../utils/helpers');
+const { formatarData, getDiaSemana, getGrupoTiragem, getNumerosIgnorados } = require('../utils/helpers');
 
 // Armazena o ID da última mensagem de tiragem enviada por grupo
 let ultimaMensagemTiragem = {};
@@ -26,18 +26,20 @@ function agendarTiragemFalta(client) {
     cron.schedule(cronExpression, async () => {
         console.log(`\n📊 Executando tiragem de falta automática - ${formatarData()}\n`);
 
-        const idGrupo = getGrupoTiragem();
-        if (!idGrupo) {
+        const idsGrupos = getGrupoTiragem();
+        if (idsGrupos.length === 0) {
             console.log('⚠️ ID_GRUPO_TIRAGEM não configurado no .env. Ignorando tiragem automática.');
             return;
         }
 
-        try {
-            const chat = await client.getChatById(idGrupo);
-            await enviarEnqueteGrupo(client, chat);
-            console.log(`✅ Tiragem automática enviada para grupo: ${chat.name}`);
-        } catch (error) {
-            console.error('❌ Erro na tiragem automática:', error.message);
+        for (const idGrupo of idsGrupos) {
+            try {
+                const chat = await client.getChatById(idGrupo);
+                await enviarEnqueteGrupo(client, chat);
+                console.log(`✅ Tiragem automática enviada para grupo: ${chat.name}`);
+            } catch (error) {
+                console.error(`❌ Erro na tiragem automática para o grupo ${idGrupo}:`, error.message);
+            }
         }
     }, {
         scheduled: true,
@@ -54,15 +56,17 @@ function agendarTiragemFalta(client) {
     cron.schedule(cronResultado, async () => {
         console.log(`\n📋 Enviando resultado da tiragem automático - ${formatarData()}\n`);
 
-        const idGrupo = getGrupoTiragem();
-        if (!idGrupo) return;
+        const idsGrupos = getGrupoTiragem();
+        if (idsGrupos.length === 0) return;
 
-        try {
-            const chat = await client.getChatById(idGrupo);
-            await enviarResultadoGrupo(client, chat);
-            console.log(`✅ Resultado automático enviado para grupo: ${chat.name}`);
-        } catch (error) {
-            console.error('❌ Erro no resultado automático:', error.message);
+        for (const idGrupo of idsGrupos) {
+            try {
+                const chat = await client.getChatById(idGrupo);
+                await enviarResultadoGrupo(client, chat);
+                console.log(`✅ Resultado automático enviado para grupo: ${chat.name}`);
+            } catch (error) {
+                console.error(`❌ Erro no resultado automático para o grupo ${idGrupo}:`, error.message);
+            }
         }
     }, {
         scheduled: true,
@@ -124,11 +128,13 @@ async function enviarResultadoGrupo(client, chat) {
     const listaPresentes = [];
     const listaAusentes = [];
 
+    const ignorados = getNumerosIgnorados();
+
     for (const participant of todosParticipantes) {
         const pId = participant.id._serialized;
 
-        // Ignora o bot na contagem
-        if (pId === botId) continue;
+        // Ignora o bot e números configurados na contagem
+        if (pId === botId || ignorados.includes(pId)) continue;
 
         if (presentesIds.has(pId)) {
             listaPresentes.push(pId);
